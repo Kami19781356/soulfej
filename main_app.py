@@ -8,8 +8,8 @@ import io
 import time
 from scipy.io import wavfile
 
-# --- 1. Database Engine ---
-DB_NAME = 'thesis_final_v8.db'
+# --- ۱. مدیریت دیتابیس ---
+DB_NAME = 'thesis_final_v10.db'
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -34,52 +34,56 @@ def log_interaction(text, v, a, intent, dwell=0, dl="No"):
     conn.commit()
     conn.close()
 
-# --- 2. Piano Audio Synthesis ---
-def generate_piano_20s(v, a):
+# --- ۲. تولید موسیقی پیانویی پیشرفته ---
+def generate_complex_piano(v, a):
     sr = 44100
     duration = 20.0
     t = np.linspace(0, duration, int(sr * duration))
+    
+    # آکوردهای پیچیده (Major 7th vs Minor 9th)
     if v > 0.5:
-        notes = [261.63, 329.63, 392.00, 523.25] if a > 0.5 else [329.63, 415.30, 493.88]
+        notes = [261.63, 329.63, 392.00, 493.88, 523.25] # Cmaj7
     else:
-        notes = [220.00, 261.63, 329.63] if a < 0.5 else [196.00, 233.08, 293.66]
+        notes = [110.00, 220.00, 261.63, 311.13, 349.23] # Amin9
     
     audio = np.zeros_like(t)
-    interval = 0.8 if a > 0.5 else 2.0
+    interval = 0.6 if a > 0.6 else 2.5 
+    
     for start in np.arange(0, duration, interval):
         idx = int(start * sr)
-        for f in notes:
-            n_len = int(interval * sr * 2)
+        for i, f in enumerate(notes):
+            n_len = int(interval * sr * 2.5)
             if idx + n_len < len(t):
-                chunk = np.linspace(0, interval * 2, n_len)
-                env = np.exp(-4 * chunk)
-                audio[idx:idx+n_len] += np.sin(2 * np.pi * f * chunk) * env
+                chunk = np.linspace(0, interval * 2.5, n_len)
+                env = np.exp(-3.5 * chunk)
+                harmonic = np.sin(2 * np.pi * f * chunk) + 0.3 * np.sin(2 * np.pi * 2 * f * chunk)
+                audio[idx:idx+n_len] += harmonic * env * (0.8 ** i)
     
-    audio = (audio / (np.max(np.abs(audio)) + 1e-9) * 0.7 * 32767).astype(np.int16)
+    audio = (audio / (np.max(np.abs(audio)) + 1e-9) * 0.8 * 32767).astype(np.int16)
     byte_io = io.BytesIO()
     wavfile.write(byte_io, sr, audio)
     return byte_io
 
-# --- 3. App Core ---
+# --- ۳. رابط کاربری و سایدبار ---
 st.set_page_config(page_title="Affective Mediation Framework", layout="wide")
 init_db()
 
-# Session State for Timing
+# زمان‌سنج برای محاسبه Dwell Time
 if "music_start_time" not in st.session_state:
     st.session_state.music_start_time = None
-if "last_v" not in st.session_state:
-    st.session_state.last_v, st.session_state.last_a, st.session_state.last_mood = 0.5, 0.5, "Neutral"
 
-st.title("🎹 Hybrid Emotional Mediation Interface")
-
-# Sidebar Controls
-st.sidebar.header("Admin")
-if st.sidebar.button("🗑 Reset Data"):
+# --- سایدبار برای تنظیمات مدیریتی ---
+st.sidebar.header("Admin Controls")
+if st.sidebar.button("🗑 Reset Database (Clear Table)"):
     conn = sqlite3.connect(DB_NAME)
-    conn.cursor().execute("DELETE FROM interactions")
+    c = conn.cursor()
+    c.execute("DELETE FROM interactions")
     conn.commit()
     conn.close()
-    st.sidebar.success("Cleared!")
+    st.sidebar.success("تمام داده‌ها پاک شدند!")
+    st.rerun() # بازنشانی صفحه برای نمایش جدول خالی
+
+st.title("🎹 Hybrid Emotional Mediation Interface")
 
 personal_library = {
     "Calm": "1SToozs1JPW2ft6yNUFvs30Qf-PNdgw6q",
@@ -88,69 +92,67 @@ personal_library = {
     "Tense": "1KlwK6rNDuDzKbv77c21g25-MlUU5-32d"
 }
 
-# Text Box with Placeholder
 user_text = st.text_area("How are you feeling?", 
-                         placeholder="e.g., I feel very peaceful and relaxed today...",
+                         placeholder="مثلاً: امروز حس خیلی خوب و آرامی دارم...",
                          height=100)
 
-if st.button("Generate & Play"):
+if st.button("Generate & Mediate"):
     if user_text:
-        # Calculate how long they listened to the PREVIOUS track
+        # محاسبه Dwell Time (زمان ماندگاری روی قطعه قبلی)
         dwell = 0
         if st.session_state.music_start_time:
             dwell = round(time.time() - st.session_state.music_start_time, 2)
         
-        # Start timing for the NEW track
         st.session_state.music_start_time = time.time()
         
-        # VAD Logic
+        # منطق VAD
         v = max(0.1, min(0.9, 0.5 + (len(user_text) % 10 - 5) / 10))
         a = max(0.1, min(0.9, 0.4 + (len(user_text) % 7 - 3) / 10))
         
         low_text = user_text.lower()
-        if any(w in low_text for w in ["happy", "شاد"]): v, a = 0.85, 0.75
-        elif any(w in low_text for w in ["sad", "غم"]): v, a = 0.15, 0.25
-        elif any(w in low_text for w in ["calm", "آرام"]): v, a = 0.80, 0.15
-        elif any(w in low_text for w in ["tense", "استرس"]): v, a = 0.20, 0.85
+        if any(w in low_text for w in ["happy", "شاد", "عالی"]): v, a = 0.9, 0.8
+        elif any(w in low_text for w in ["sad", "غم", "گریه"]): v, a = 0.1, 0.2
+        elif any(w in low_text for w in ["calm", "آرام", "خوب"]): v, a = 0.8, 0.2
+        elif any(w in low_text for w in ["tense", "استرس", "فشار"]): v, a = 0.2, 0.9
 
         mood = "Happy" if v >= 0.5 and a >= 0.5 else "Calm" if v >= 0.5 else "Tense" if a >= 0.5 else "Sad"
-        st.session_state.last_v, st.session_state.last_a, st.session_state.last_mood = v, a, mood
         
-        # Log this interaction
+        # ثبت در دیتابیس
         log_interaction(user_text, v, a, mood, dwell=dwell, dl="No")
 
         st.markdown("---")
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("🤖 AI Piano (20s)")
-            st.audio(generate_piano_20s(v, a), format="audio/wav")
+            st.subheader("🤖 AI Piano (Generative)")
+            st.audio(generate_complex_piano(v, a), format="audio/wav")
+        
         with c2:
             st.subheader("👤 Human Curation")
             dl_url = f"https://docs.google.com/uc?export=download&id={personal_library[mood]}"
-            st.markdown(f"**[📥 Download {mood} Track]({dl_url})**")
-            if st.button("Mark as Downloaded ✅"):
-                log_interaction("Manual Download Confirm", v, a, mood, dwell=0, dl="Yes")
-                st.balloons()
+            st.link_button(f"📥 Download {mood} Track", dl_url)
+            
+            if st.button("Confirm Download ✅"):
+                log_interaction("User Feedback", v, a, mood, dwell=0, dl="Yes")
+                st.success("Download recorded in CSV!")
 
-        # Chart
+        # رسم نمودار VAD
         fig = go.Figure(go.Scatter(x=[v], y=[a], mode='markers+text', text=[mood], marker=dict(size=25, color='orange')))
         fig.update_layout(xaxis=dict(title="Valence", range=[0,1]), yaxis=dict(title="Arousal", range=[0,1]), height=350)
         st.plotly_chart(fig)
 
-# --- 4. Reporting ---
+# --- ۴. نمایش گزارش زنده و خروجی CSV ---
 st.markdown("---")
-st.subheader("📋 Interaction Table (Live View)")
+st.subheader("📋 Research Data (English Report)")
 try:
     conn = sqlite3.connect(DB_NAME)
-    # On screen we show everything EXCEPT 'downloaded' to keep it clean
-    df_display = pd.read_sql_query("SELECT timestamp, user_input, valence, arousal, intent, dwell_time_sec FROM interactions ORDER BY id DESC", conn)
-    st.table(df_display.head(5))
-    
-    # In CSV we provide the FULL data including download status
     df_full = pd.read_sql_query("SELECT * FROM interactions ORDER BY id DESC", conn)
+    
+    # نمایش در صفحه (بدون ستون دانلود برای زیبایی)
+    st.table(df_full.drop(columns=['downloaded']).head(5))
+    
     if not df_full.empty:
         csv = df_full.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Export Research Report (Full CSV)", csv, "thesis_results.csv", "text/csv")
+        st.download_button("📥 Export FULL CSV Report", csv, "research_results.csv", "text/csv")
     conn.close()
 except:
-    st.write("No data.")
+    st.write("داده‌ای ثبت نشده است.")
