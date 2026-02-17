@@ -6,10 +6,11 @@ import plotly.graph_objects as go
 from datetime import datetime
 import io
 import time
+import base64
 from scipy.io import wavfile
 
 # --- 1. Database Configuration ---
-DB_NAME = 'phd_kamran_v14.db'
+DB_NAME = 'phd_kamran_final.db'
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -34,7 +35,7 @@ def log_interaction(text, v, a, intent, dwell=0, sat="N/A"):
     conn.commit()
     conn.close()
 
-# --- 2. Intensity-Aware Piano Synthesis ---
+# --- 2. Piano Synthesis ---
 def generate_advanced_piano(v, a, intensity_multiplier=1.0):
     sr = 44100
     duration = 20.0
@@ -59,17 +60,23 @@ def generate_advanced_piano(v, a, intensity_multiplier=1.0):
     wavfile.write(byte_io, sr, audio)
     return byte_io
 
+# تابع کمکی برای ایجاد پلیر با قابلیت Autoplay
+def st_autoplay(audio_bytes):
+    b64 = base64.b64encode(audio_bytes.read()).decode()
+    md = f"""
+        <audio controls autoplay="true">
+        <source src="data:audio/wav;base64,{b64}" type="audio/wav">
+        </audio>
+    """
+    st.markdown(md, unsafe_allow_html=True)
+
 # --- 3. UI Logic ---
 st.set_page_config(page_title="PhD Thesis - Kamran Rasoolzadeh", layout="wide")
 init_db()
 
-# اصلاح منطق زمان: فقط وقتی دکمه زده شد زمان شروع شود
-if "first_click_done" not in st.session_state:
-    st.session_state.first_click_done = False
 if "last_click_time" not in st.session_state:
-    st.session_state.last_click_time = 0.0
+    st.session_state.last_click_time = None
 
-# سایدبار
 st.sidebar.title("🎓 Admin Panel")
 st.sidebar.info("Researcher: Kamran Rasoolzadeh")
 if st.sidebar.button("🗑 Reset Database"):
@@ -83,7 +90,6 @@ if st.sidebar.button("🗑 Reset Database"):
 st.title("🎹 Multimodal Emotional Mediation Framework")
 st.markdown("### PhD Researcher: **Kamran Rasoolzadeh**")
 
-# بخش بازخورد
 st.sidebar.markdown("---")
 st.sidebar.subheader("Feedback Loop")
 sat_input = st.sidebar.selectbox("Music Accuracy:", ["N/A", "Yes - Accurate", "No - Inaccurate"])
@@ -100,29 +106,23 @@ if st.button("Analyze & Mediate"):
     if user_text:
         current_now = time.time()
         
-        # محاسبه ثانیه واقعی: اگر بار اول است 0، در غیر این صورت تفاضل ثانیه‌ها
-        if not st.session_state.first_click_done:
+        # محاسبه زمان دقیق از لحظه کلیک قبلی (بر حسب ثانیه)
+        if st.session_state.last_click_time is None:
             actual_dwell = 0.0
-            st.session_state.first_click_done = True
         else:
             actual_dwell = round(current_now - st.session_state.last_click_time, 2)
         
         st.session_state.last_click_time = current_now 
         
-        # تحلیل شدت
         intensity = 1.5 if any(word in user_text.lower() for word in ["very", "extremely", "خیلی", "بسیار"]) else 1.0
-        
-        # منطق VAD
         v = max(0.1, min(0.9, 0.5 + (len(user_text) % 10 - 5) / 10))
         a = max(0.1, min(0.9, 0.4 + (len(user_text) % 7 - 3) / 10))
         
         low_t = user_text.lower()
         if "happy" in low_t or "شاد" in low_t: 
-            v = 0.8 * intensity if intensity < 1.2 else 0.95
-            a = 0.7 * intensity
+            v, a = (0.95, 0.8) if intensity > 1.2 else (0.8, 0.7)
         elif "sad" in low_t or "غم" in low_t:
-            v = 0.3 / intensity
-            a = 0.2 * intensity
+            v, a = (0.1, 0.2) if intensity > 1.2 else (0.3, 0.2)
 
         mood = "Happy" if v >= 0.5 and a >= 0.5 else "Calm" if v >= 0.5 else "Tense" if a >= 0.5 else "Sad"
         
@@ -131,8 +131,10 @@ if st.button("Analyze & Mediate"):
         st.markdown("---")
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("🤖 AI Generative Output")
-            st.audio(generate_advanced_piano(v, a, intensity), format="audio/wav")
+            st.subheader("🤖 AI Generative Output (Autoplay)")
+            audio_data = generate_advanced_piano(v, a, intensity)
+            st_autoplay(audio_data) # استفاده از پلیر اتوپلی
+        
         with c2:
             st.subheader("👤 Human Artist Selection")
             drive_id = {"Happy":"1Lw1MYHlFHxDYNaMyp7YywGj1JaiEP5po", "Calm":"1SToozs1JPW2ft6yNUFvs30Qf-PNdgw6q", 
@@ -145,7 +147,6 @@ if st.button("Analyze & Mediate"):
         fig.update_layout(xaxis=dict(title="Valence", range=[0,1]), yaxis=dict(title="Arousal", range=[0,1]), height=350)
         st.plotly_chart(fig)
 
-# --- Report ---
 st.markdown("---")
 st.subheader("📊 Research Logs (Experimental Data)")
 try:
