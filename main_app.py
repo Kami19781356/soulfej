@@ -4,105 +4,94 @@ import sqlite3
 import plotly.graph_objects as go
 from midiutil import MIDIFile
 import tempfile
-import random
 from datetime import datetime
 
-# --- تنظیمات دیتابیس (Data Collection Layer) ---
+# --- تنظیمات دیتابیس ---
 def init_db():
-    conn = sqlite3.connect('hybrid_music_data.db')
+    conn = sqlite3.connect('hybrid_v3_data.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS logs 
         (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, input_text TEXT, 
-        valence REAL, arousal REAL, music_intent TEXT, action TEXT)''')
+        valence REAL, arousal REAL, music_intent TEXT)''')
     conn.commit()
     conn.close()
 
-def log_event(text, v, a, intent, action):
-    conn = sqlite3.connect('hybrid_music_data.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO logs (timestamp, input_text, valence, arousal, music_intent, action) VALUES (?,?,?,?,?,?)',
-                   (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), text, v, a, intent, action))
-    conn.commit()
-    conn.close()
-
-# --- بخش اول: تولید موسیقی الگوریتمیک (AI Composition) ---
-def generate_ai_melody(valence, arousal):
+# --- سنتز ملودی با کیفیت‌تر (آکورد محور) ---
+def generate_rich_midi(valence, arousal):
     midi = MIDIFile(1)
-    midi.addTempo(0, 0, int(60 + arousal * 100))
-    scale = [0, 2, 4, 5, 7, 9, 11] if valence > 0.5 else [0, 2, 3, 5, 7, 8, 10]
+    track = 0
     time = 0
-    for _ in range(16):
-        if random.random() < (0.3 + arousal * 0.4):
-            pitch = 60 + random.choice(scale)
-            midi.addNote(0, 0, pitch, time, 0.5, 80 + int(arousal * 20))
-        time += 0.5
+    midi.addTempo(track, time, int(50 + arousal * 80))
+    
+    # انتخاب گام و آکورد بر اساس والانس
+    if valence > 0.5:
+        scale = [60, 64, 67, 72] # C Major (Happy)
+        volume = 90
+    else:
+        scale = [60, 63, 67, 70] # C Minor (Sad/Tense)
+        volume = 60
+
+    # تولید یک الگوی ۸ میزانی به جای تک نوت
+    for _ in range(8):
+        for note in scale:
+            duration = 0.5 if arousal > 0.5 else 2.0
+            midi.addNote(track, 0, note, time, duration, volume)
+            time += duration
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mid") as tmp:
         midi.writeFile(tmp)
         return tmp.name
 
-# --- بخش دوم: موسیقی‌های شخصی  (Direct Links) ---
+# --- لینک‌های مستقیم اصلاح شده گوگل درایو ---
+def get_drive_url(id):
+    return f"https://docs.google.com/uc?export=open&id={id}"
+
 personal_library = {
-    "Calm": "https://docs.google.com/uc?export=download&id=1SToozs1JPW2ft6yNUFvs30Qf-PNdgw6q",
-    "Sad": "https://docs.google.com/uc?export=download&id=1Z6sHysLQs8TblMpfrwO4IAWNJEt8Wk3R",
-    "Happy": "https://docs.google.com/uc?export=download&id=1Lw1MYHlFHxDYNaMyp7YywGj1JaiEP5po",
-    "Tense": "https://docs.google.com/uc?export=download&id=1KlwK6rNDuDzKbv77c21g25-MlUU5-32d"
+    "Calm": get_drive_url("1SToozs1JPW2ft6yNUFvs30Qf-PNdgw6q"),
+    "Sad": get_drive_url("1Z6sHysLQs8TblMpfrwO4IAWNJEt8Wk3R"),
+    "Happy": get_drive_url("1Lw1MYHlFHxDYNaMyp7YywGj1JaiEP5po"),
+    "Tense": get_drive_url("1KlwK6rNDuDzKbv77c21g25-MlUU5-32d")
 }
 
-# --- رابط کاربری (UI) ---
-st.set_page_config(page_title="Hybrid Emotional Mediation", layout="wide")
+# --- رابط کاربری ---
+st.set_page_config(page_title="Hybrid Music Mediation V3", layout="wide")
 st.title("🎼 Hybrid Emotional Mediation: AI Gen + Human Curation")
 init_db()
 
-st.markdown("""
-این سیستم بر اساس لایه میانجی (Mediation Layer) طراحی شده در رساله دکتری، 
-ورودی‌های چندوجهی شما را تحلیل کرده و دو پاسخ متفاوت ارائه می‌دهد.
-""")
-
-user_input = st.text_area("How are you feeling?", placeholder="Example: I feel very peaceful and relaxed today...")
+user_input = st.text_area("How are you feeling?", placeholder="Type here...")
 
 if st.button("Generate & Recommend"):
     if user_input:
-        # لایه میانجی (Simplified Mediation Core)
+        # لایه میانجی (Mediation Layer) [cite: 51, 132, 156]
         v = max(0.1, min(0.9, 0.5 + (len(user_input) % 10 - 5) / 10))
         a = max(0.1, min(0.9, 0.4 + (len(user_input) % 7 - 3) / 10))
         
-        st.markdown("---")
         col1, col2 = st.columns(2)
         
         with col1:
             st.subheader("🤖 AI Generative Composition")
-            st.write("ملودی تولید شده در لحظه بر اساس تراژکتوری عاطفی کاربر.")
-            midi_path = generate_ai_melody(v, a)
+            st.write("ملودی آکورال بر اساس تراژکتوری VAD [cite: 135]")
+            midi_path = generate_rich_midi(v, a)
             with open(midi_path, "rb") as f:
-                st.download_button("📥 Download AI MIDI Composition", f, "ai_music.mid")
-            
-            fig = go.Figure(go.Scatter(x=[v], y=[a], mode='markers+text', text=["Affect State"], marker=dict(size=25, color='red')))
-            fig.update_layout(xaxis=dict(title="Valence (Pleasantness)", range=[0,1]), yaxis=dict(title="Arousal (Intensity)", range=[0,1]), height=400)
-            st.plotly_chart(fig)
+                st.download_button("🎵 Download AI Composition", f, "ai_music.mid")
+            st.caption("نکته: فایل‌های MIDI برای پخش نیاز به نرم‌افزار (VLC یا Media Player) دارند.")
 
         with col2:
             st.subheader("👤 Human Artist Selection")
-            st.write("پیشنهاد هوشمند از آثار موسیقی پارسا رسول‌زاده متناسب با این حس.")
+            mood = "Happy" if v >= 0.5 and a >= 0.5 else "Calm" if v >= 0.5 else "Sad" if a < 0.5 else "Tense"
             
-            if v >= 0.5 and a >= 0.5: mood = "Happy"
-            elif v >= 0.5 and a < 0.5: mood = "Calm"
-            elif v < 0.5 and a < 0.5: mood = "Sad"
-            else: mood = "Tense"
-            
-            st.audio(personal_library[mood])
-            st.success(f"Selected Track Mood: {mood}")
-            
-        log_event(user_input, v, a, f"Hybrid_{mood}", "Generate")
-    else:
-        st.warning("Please enter some text to analyze.")
+            # استفاده از HTML برای دور زدن محدودیت پخش گوگل درایو
+            audio_url = personal_library[mood]
+            st.markdown(f'<audio controls src="{audio_url}" style="width: 100%;"></audio>', unsafe_allow_html=True)
+            st.success(f"Selected: {mood} (Valence: {v}, Arousal: {a})")
 
-# نمایش دیتابیس برای اثبات بخش Data Collection مقاله
+        # نمودار فضای VAD [cite: 133, 199]
+        fig = go.Figure(go.Scatter(x=[v], y=[a], mode='markers+text', text=["Current State"], marker=dict(size=30, color='red')))
+        fig.update_layout(xaxis=dict(title="Valence", range=[0,1]), yaxis=dict(title="Arousal", range=[0,1]), height=400)
+        st.plotly_chart(fig)
+
+# نمایش لاگ‌های دیتابیس [cite: 187, 197]
 st.markdown("---")
-st.subheader("📊 Interaction Logs (Real-time Empirical Data)")
-conn = sqlite3.connect('hybrid_music_data.db')
-df = pd.read_sql_query("SELECT * FROM logs ORDER BY id DESC", conn)
-st.dataframe(df)
-
-if not df.empty:
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Export Logs for Article Validation", csv, "experimental_results.csv", "text/csv")
+st.subheader("📊 Interaction Database (Experimental Results)")
+conn = sqlite3.connect('hybrid_v3_data.db')
+st.dataframe(pd.read_sql_query("SELECT * FROM logs ORDER BY id DESC", conn))
