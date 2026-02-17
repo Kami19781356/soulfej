@@ -126,3 +126,11 @@ try:
     conn.close()
 except:
     st.write("داده‌ای ثبت نشده است.")
+
+if st.button("پاکسازی کامل دیتابیس"):
+    conn = sqlite3.connect('thesis_final_v6.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM interactions") # تمام ردیف‌ها را پاک می‌کند
+    conn.commit()
+    conn.close()
+    st.success("تمام داده‌های قبلی با موفقیت پاک شدند.")
