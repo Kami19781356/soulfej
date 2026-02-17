@@ -7,51 +7,74 @@ from datetime import datetime
 import io
 from scipy.io import wavfile
 
-# --- ۱. مدیریت دیتابیس و ذخیره گزارش ---
-def log_to_db(text, v, a, intent):
-    try:
-        conn = sqlite3.connect('thesis_final_v5.db')
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS interactions 
-                     (id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, input TEXT, v REAL, a REAL, intent TEXT)''')
-        c.execute("INSERT INTO interactions (time, input, v, a, intent) VALUES (?, ?, ?, ?, ?)",
-                  (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), text, v, a, intent))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        st.error(f"Database Error: {e}")
+# --- ۱. موتور تفسیر هوشمند احساس (VAD Engine) ---
+def get_vad_coordinates(text):
+    text = text.lower()
+    # نگاشت کلمات کلیدی برای دقت بالاتر در تفسیر
+    keywords = {
+        "happy": (0.8, 0.8), "شاد": (0.9, 0.7), "خوشحال": (0.8, 0.6),
+        "sad": (0.2, 0.2), "غم": (0.1, 0.3), "ناراحت": (0.2, 0.3),
+        "tense": (0.3, 0.8), "ترس": (0.2, 0.9), "استرس": (0.3, 0.8),
+        "calm": (0.8, 0.2), "آرام": (0.9, 0.1), "صلح": (0.8, 0.2)
+    }
+    for word, coords in keywords.items():
+        if word in text:
+            return coords[0], coords[1]
+    
+    # اگر کلمه کلیدی نبود، از فرمول طول رشته استفاده کن (Fallback)
+    v = max(0.1, min(0.9, 0.5 + (len(text) % 10 - 5) / 10))
+    a = max(0.1, min(0.9, 0.4 + (len(text) % 7 - 3) / 10))
+    return v, a
 
-# --- ۲. تولید موسیقی جنریتیو ۲۰ ثانیه‌ای با هارمونی متغیر ---
-def generate_advanced_audio_20s(valence, arousal):
+# --- ۲. سنتز پیانوی آکوردی (Piano-style Synthesis) ---
+def generate_piano_music(v, a):
     sr = 44100
-    duration = 20.0  # ۲۰ ثانیه
+    duration = 20.0
     t = np.linspace(0, duration, int(sr * duration))
     
-    # تعیین گام بر اساس والانس
-    if valence > 0.5:
-        base_freqs = [261.63, 329.63, 392.00]  # C Major
+    # انتخاب آکوردهای پیانو (فرکانس‌های غنی‌تر)
+    if v > 0.5:
+        base_notes = [261.63, 329.63, 392.00, 523.25] if a > 0.5 else [329.63, 415.30, 493.88] # C Major / E Major
     else:
-        base_freqs = [261.63, 311.13, 392.00]  # C Minor
+        base_notes = [220.00, 261.63, 329.63] if a < 0.5 else [196.00, 233.08, 293.66] # A Minor / G Minor
     
-    tempo = 1 + (arousal * 4)
     audio_signal = np.zeros_like(t)
     
-    # ایجاد تغییرات در نت‌ها در طول ۲۰ ثانیه (Arpeggio)
-    for i in range(len(base_freqs)):
-        # نوسان فرکانس برای اینکه موسیقی زنده به نظر برسد
-        freq_mod = base_freqs[i] * (1 + 0.005 * np.sin(2 * np.pi * 0.5 * t))
-        # پاکت صوتی ریتمیک
-        envelope = np.abs(np.sin(2 * np.pi * (tempo / (i+1)) * t))
-        audio_signal += envelope * np.sin(2 * np.pi * freq_mod * t)
-    
-    # نرمالایز و تبدیل به ۱۶ بیت
-    audio_signal = (audio_signal / np.max(np.abs(audio_signal)) * 0.8 * 32767).astype(np.int16)
-    
+    # شبیه‌سازی ضربات پیانو (Attack-Decay)
+    beat_duration = 2.0 if a < 0.5 else 0.8
+    for start_time in np.arange(0, duration, beat_duration):
+        start_idx = int(start_time * sr)
+        # تولید آکورد در هر ضربه
+        for freq in base_notes:
+            note_len = int(beat_duration * sr * 2) # طنین صدا
+            if start_idx + note_len < len(t):
+                time_chunk = np.linspace(0, beat_duration * 2, note_len)
+                # فرمول صدای پیانو (موج سینوسی + هارمونیک‌ها + افت صدا)
+                piano_note = (np.sin(2 * np.pi * freq * time_chunk) + 
+                             0.5 * np.sin(2 * np.pi * 2 * freq * time_chunk)) * \
+                             np.exp(-3 * time_chunk)
+                audio_signal[start_idx:start_idx+note_len] += piano_note
+
+    audio_signal = (audio_signal / np.max(np.abs(audio_signal)) * 0.7 * 32767).astype(np.int16)
     byte_io = io.BytesIO()
     wavfile.write(byte_io, sr, audio_signal)
     return byte_io
 
-# --- ۳. کتابخانه موسیقی اصلاح شده (آیدی‌های شما) ---
+# --- ۳. دیتابیس نهایی (Interaction Logging) ---
+def log_to_db(text, v, a, intent):
+    conn = sqlite3.connect('thesis_final_v6.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS interactions 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, input TEXT, v REAL, a REAL, intent TEXT)''')
+    c.execute("INSERT INTO interactions (time, input, v, a, intent) VALUES (?, ?, ?, ?, ?)",
+              (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), text, v, a, intent))
+    conn.commit()
+    conn.close()
+
+# --- ۴. رابط کاربری (Multimodal UI) ---
+st.set_page_config(page_title="Multimodal AI Music Mediation", layout="wide")
+st.title("🎹 Unified Emotional Mediation: Piano Gen + Human Artist")
+
 personal_library = {
     "Calm": "1SToozs1JPW2ft6yNUFvs30Qf-PNdgw6q",
     "Sad": "1Z6sHysLQs8TblMpfrwO4IAWNJEt8Wk3R",
@@ -59,62 +82,47 @@ personal_library = {
     "Tense": "1KlwK6rNDuDzKbv77c21g25-MlUU5-32d"
 }
 
-# --- ۴. رابط کاربری (UI) ---
-st.set_page_config(page_title="Multimodal Mediation Framework v5", layout="wide")
-st.title("🎼 Unified Emotional Mediation System")
-st.markdown("---")
+user_input = st.text_area("توصیف عاطفی خود را وارد کنید:", placeholder="مانند: حس آرامش دارم یا خیلی مضطرب هستم...")
 
-user_input = st.text_area("ورودی متنی یا توصیف وضعیت عاطفی:", placeholder="بنویسید...")
-
-if st.button("تحلیل و تولید خروجی"):
+if st.button("تحلیل و اجرای فریمورک میانجی"):
     if user_input:
-        # لایه میانجی (مدل ساده شده برای شبیه‌سازی تراژکتوری)
-        v = max(0.1, min(0.9, 0.5 + (len(user_input) % 10 - 5) / 10))
-        a = max(0.1, min(0.9, 0.4 + (len(user_input) % 7 - 3) / 10))
+        v, a = get_vad_coordinates(user_input)
         
-        if v > 0.5: mood = "Happy" if a > 0.5 else "Calm"
-        else: mood = "Tense" if a > 0.5 else "Sad"
+        # تشخیص دقیق مود
+        if v >= 0.5: mood = "Happy" if a >= 0.5 else "Calm"
+        else: mood = "Tense" if a >= 0.5 else "Sad"
         
         log_to_db(user_input, v, a, mood)
         
+        st.markdown("---")
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("🤖 موسیقی جنریتیو (۲۰ ثانیه)")
-            audio_gen = generate_advanced_audio_20s(v, a)
-            st.audio(audio_gen, format="audio/wav")
-            st.write(f"Generated Pattern: {mood} Harmonic Path")
+            st.subheader("🤖 Generative AI: Piano Composition")
+            audio_data = generate_piano_music(v, a)
+            st.audio(audio_data, format="audio/wav")
+            st.caption(f"تولید ۲۰ ثانیه پیانو در گام‌های {mood} بر اساس والانس {v}")
 
         with col2:
-            st.subheader("👤 موسیقی پیشنهادی (کیوریتور انسانی)")
-            file_id = personal_library[mood]
-            # لینک دانلود مستقیم
-            dl_link = f"https://docs.google.com/uc?export=download&id={file_id}"
+            st.subheader("👤 Artist Selection: Personal Archive")
+            dl_link = f"https://docs.google.com/uc?export=download&id={personal_library[mood]}"
             st.markdown(f"**[📥 دانلود موسیقی انتخابی ({mood})]({dl_link})**")
-            st.info("این قطعه بر اساس انطباق عاطفی با ورودی شما از آرشیو انتخاب شده است.")
+            st.success(f"انطباق با آرشیو هنرمند: {mood}")
 
-        # نمودار فضای VAD
-        fig = go.Figure(go.Scatter(x=[v], y=[a], mode='markers+text', text=[mood], marker=dict(size=25, color='orange')))
-        fig.update_layout(xaxis=dict(title="Valence", range=[0,1]), yaxis=dict(title="Arousal", range=[0,1]))
+        fig = go.Figure(go.Scatter(x=[v], y=[a], mode='markers+text', text=[f"Input: {mood}"], marker=dict(size=30, color='red')))
+        fig.update_layout(title="VAD Affective Mapping", xaxis=dict(title="Valence", range=[0,1]), yaxis=dict(title="Arousal", range=[0,1]))
         st.plotly_chart(fig)
 
-# --- ۵. بخش گزارش‌گیری برای استاد (CSV Export) ---
+# --- بخش گزارش‌گیری نهایی (CSV) ---
 st.markdown("---")
-st.subheader("📑 گزارش تعاملات و نتایج تجربی")
-
+st.subheader("📋 گزارش تعاملات و نتایج تجربی (Experimental Results)")
 try:
-    conn = sqlite3.connect('thesis_final_v5.db')
+    conn = sqlite3.connect('thesis_final_v6.db')
     df = pd.read_sql_query("SELECT * FROM interactions ORDER BY id DESC", conn)
     st.dataframe(df)
-    
     if not df.empty:
         csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 ذخیره ریپورت نهایی (CSV) برای ارائه به استاد",
-            data=csv,
-            file_name=f'emotion_report_{datetime.now().strftime("%Y%m%d")}.csv',
-            mime='text/csv',
-        )
+        st.download_button("📥 دریافت ریپورت نهایی برای ارسال به استاد", csv, "final_interaction_report.csv", "text/csv")
     conn.close()
 except:
-    st.write("هنوز تعاملی ثبت نشده است.")
+    st.write("داده‌ای ثبت نشده است.")
