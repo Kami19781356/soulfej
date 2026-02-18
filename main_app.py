@@ -10,7 +10,7 @@ import base64
 from scipy.io import wavfile
 
 # --- 1. Database Configuration ---
-DB_NAME = 'phd_kamran_v15.db'
+DB_NAME = 'phd_kamran_v15_fixed.db'
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -35,24 +35,18 @@ def log_interaction(text, v, a, intent, dwell=0, sat="N/A"):
     conn.commit()
     conn.close()
 
-# --- 2. Advanced Piano Synthesis (Adaptive Chords) ---
+# --- 2. Advanced Piano Synthesis ---
 def generate_advanced_piano(v, a, intensity):
     sr = 44100
-    duration = 20.0
+    duration = 20.0 # طول قطعه ۲۰ ثانیه است
     t = np.linspace(0, duration, int(sr * duration))
     
-    # انتخاب آکورد بر اساس ۴ ناحیه اصلی فضای VAD
-    if v >= 0.5 and a >= 0.5: # Happy
-        base_notes = [261.63, 329.63, 392.00, 493.88] # C Maj 7
-    elif v >= 0.5 and a < 0.5: # Calm
-        base_notes = [349.23, 440.00, 523.25, 659.25] # F Maj 7
-    elif v < 0.5 and a >= 0.5: # Tense
-        base_notes = [196.00, 233.08, 277.18, 311.13] # G# Dim
-    else: # Sad
-        base_notes = [174.61, 207.65, 261.63, 311.13] # F Min 7
+    if v >= 0.5 and a >= 0.5: base_notes = [261.63, 329.63, 392.00, 493.88] 
+    elif v >= 0.5 and a < 0.5: base_notes = [349.23, 440.00, 523.25, 659.25]
+    elif v < 0.5 and a >= 0.5: base_notes = [196.00, 233.08, 277.18, 311.13]
+    else: base_notes = [174.61, 207.65, 261.63, 311.13]
 
-    # تنظیم فرکانس برای شدت‌های بسیار بالا/پایین
-    if intensity > 1.2 and v < 0.5: base_notes = [n * 0.5 for n in base_notes] # بم‌تر برای Very Sad/Tense
+    if intensity > 1.2 and v < 0.5: base_notes = [n * 0.5 for n in base_notes]
     
     audio = np.zeros_like(t)
     note_speed = max(0.1, 0.6 - (a * 0.5 * intensity))
@@ -81,6 +75,7 @@ def st_autoplay(audio_bytes):
 st.set_page_config(page_title="PhD Thesis - Kamran Rasoolzadeh", layout="wide")
 init_db()
 
+# متغیر زمان در حافظه موقت
 if "last_click_time" not in st.session_state:
     st.session_state.last_click_time = None
 
@@ -113,13 +108,21 @@ user_text = st.text_area("How are you feeling?", placeholder="e.g., I am very ca
 if st.button("Analyze & Mediate"):
     if user_text:
         current_now = time.time()
-        dwell = round(current_now - st.session_state.last_click_time, 2) if st.session_state.last_click_time else 0.0
+        
+        # --- استراتژی زمان هوشمند ---
+        if st.session_state.last_click_time:
+            raw_dwell = current_now - st.session_state.last_click_time
+            # اگر زمان خیلی زیاد بود (بیشتر از ۲۲ ثانیه)، یعنی کاربر بعد از اتمام آهنگ معطل کرده
+            # پس سقف را روی ۲۱ ثانیه می‌گذاریم تا در گزارش منطقی باشد
+            actual_dwell = round(min(raw_dwell, 21.0), 2)
+        else:
+            actual_dwell = 0.0
+            
         st.session_state.last_click_time = current_now 
         
         # تحلیل شدت
         intensity = 1.5 if any(word in user_text.lower() for word in ["very", "extremely", "خیلی", "بسیار"]) else 1.0
         
-        # نگاشت ۴ حالته (VAD Mapping)
         low_t = user_text.lower()
         if any(w in low_t for w in ["happy", "شاد"]): 
             v, a = (0.9, 0.8) if intensity > 1.2 else (0.75, 0.6)
@@ -130,11 +133,11 @@ if st.button("Analyze & Mediate"):
         elif any(w in low_t for w in ["calm", "آرام", "صلح"]): 
             v, a = (0.9, 0.1) if intensity > 1.2 else (0.75, 0.2)
         else:
-            v, a = 0.5, 0.5 # Neutral
+            v, a = 0.5, 0.5 
 
         mood = "Happy" if v >= 0.5 and a >= 0.5 else "Calm" if v >= 0.5 else "Tense" if a >= 0.5 else "Sad"
         
-        log_interaction(user_text, v, a, mood, dwell=dwell)
+        log_interaction(user_text, v, a, mood, dwell=actual_dwell)
 
         st.markdown("---")
         c1, c2 = st.columns(2)
@@ -145,15 +148,15 @@ if st.button("Analyze & Mediate"):
         
         with c2:
             st.subheader("👤 Human Artist Reference")
-            drive_id = {"Happy":"1Lw1MYHlFHxDYNaMyp7YywGj1JaiEP5po", "Calm":"1SToozs1JPW2ft6yNUFvs30Qf-PNdgw6q", 
+            drive_id = {"Happy":"1Lw1MYHlFHxDYPaMyp7YywGj1JaiEP5po", "Calm":"1SToozs1JPW2ft6yNUFvs30Qf-PNdgw6q", 
                         "Sad":"1Z6sHysLQs8TblMpfrwO4IAWNJEt8Wk3R", "Tense":"1KlwK6rNDuDzKbv77c21g25-MlUU5-32d"}
             dl_url = f"https://docs.google.com/uc?export=download&id={drive_id[mood]}"
             st.markdown(f"**[📥 Download {mood} Track]({dl_url})**")
             st.audio(dl_url)
 
         # Plot VAD
-        fig = go.Figure(go.Scatter(x=[v], y=[a], mode='markers+text', text=[f"{mood} (x{intensity})"], marker=dict(size=25, color='orange')))
-        fig.update_layout(xaxis=dict(title="Valence (Pleasure)", range=[0,1]), yaxis=dict(title="Arousal (Energy)", range=[0,1]), height=350)
+        fig = go.Figure(go.Scatter(x=[v], y=[a], mode='markers+text', text=[f"{mood}"], marker=dict(size=25, color='orange')))
+        fig.update_layout(xaxis=dict(title="Valence", range=[0,1]), yaxis=dict(title="Arousal", range=[0,1]), height=350)
         st.plotly_chart(fig)
 
 # --- Report ---
