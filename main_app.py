@@ -95,7 +95,7 @@ if st.sidebar.button("🗑 Reset Database"):
     st.rerun()
 
 st.title("🎹 Soulfej AI: Multimodal Emotional Mediation Prototype")
-st.markdown("### Developed by Parviz Rasoulzadeh Moshtaghin**")
+st.markdown("### Developed by Parviz Rasoulzadeh Moshtaghin")
 
 # Feedback Loop Sidebar
 st.sidebar.markdown("---")
