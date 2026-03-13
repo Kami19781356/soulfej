@@ -78,14 +78,14 @@ def st_autoplay(audio_bytes):
     st.markdown(md, unsafe_allow_html=True)
 
 # --- 3. UI Logic ---
-st.set_page_config(page_title="PhD Thesis - Kamran Rasoolzadeh", layout="wide")
+st.set_page_config(page_title="Soulfej AI - Multimodal Emotional Mediation Prototype", layout="wide")
 init_db()
 
 if "last_click_time" not in st.session_state:
     st.session_state.last_click_time = None
 
 st.sidebar.title("🎓 Admin Panel")
-st.sidebar.info("Researcher: Kamran Rasoolzadeh")
+st.sidebar.info("Developed by Parviz Rasoulzadeh Moshtaghin")
 if st.sidebar.button("🗑 Reset Database"):
     conn = sqlite3.connect(DB_NAME)
     conn.cursor().execute("DELETE FROM interactions")
@@ -94,8 +94,8 @@ if st.sidebar.button("🗑 Reset Database"):
     st.sidebar.success("Database Cleared!")
     st.rerun()
 
-st.title("🎹 Multimodal Emotional Mediation Framework")
-st.markdown("### PhD Researcher: **Kamran Rasoolzadeh**")
+st.title("🎹 Soulfej AI: Multimodal Emotional Mediation Prototype")
+st.markdown("### Developed by Parviz Rasoulzadeh Moshtaghin**")
 
 # Feedback Loop Sidebar
 st.sidebar.markdown("---")
